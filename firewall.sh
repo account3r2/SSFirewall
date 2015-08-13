@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# IPTables Firewall v1.1. Copyright (c) 2015 Niko Geil.
+# IPTables Firewall v1.2. Copyright (c) 2015 Niko Geil.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -15,7 +15,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-echo "Firewall v1.1 by Niko Geil."
+echo "Firewall v1.2 by Niko Geil."
 
 # Set up variables.
 IPTABLES=/sbin/iptables
@@ -23,6 +23,7 @@ IPTABLESSAVE=/sbin/iptables-save
 IPTABLESRESTORE=/sbin/iptables-restore
 IPWHITELIST=/etc/network/firewall/ipwhitelist.txt
 IPBLACKLIST=/etc/network/firewall/ipblacklist.txt
+IPBLACKLISTBLOCKS=/etc/network/firewall/blocks
 PORTWHITELISTUDP=/etc/network/firewall/portwhitelistudp.txt
 PORTBLACKLISTUDP=/etc/network/firewall/portblacklistudp.txt
 PORTWHITELISTTCP=/etc/network/firewall/portwhitelisttcp.txt
@@ -39,7 +40,7 @@ $IPTABLES -F
 $IPTABLES -X
 $IPTABLES -Z
 
-# Allow SSH on port 22.
+# Allow SSH on the port specified above.
 # Don't touch this code you idiot.
 # You don't want another incident.
 echo "Accepting SSH connections on port $SSHPORT."
@@ -68,6 +69,11 @@ echo "# Common Netmasks:" >> $IPBLACKLIST
 echo "# /8            x.0.0.0" >> $IPBLACKLIST
 echo "# /16           x.x.0.0" >> $IPBLACKLIST
 echo "# /24           x.x.x.0" >> $IPBLACKLIST
+fi
+if [ ! -d $IPBLACKLISTBLOCKS ]
+then
+echo "IP Block Blacklist directory not found, creating directory."
+mkdir $IPBLACKLISTBLOCKS
 fi
 if [ ! -e $PORTWHITELISTUDP ]
 then
@@ -160,7 +166,23 @@ $IPTABLES -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
 echo "Saving and applying settings."
 $IPTABLESSAVE > /etc/iptables.rules
 $IPTABLESRESTORE < /etc/iptables.rules
-echo "Firewall configuration complete. IPTables rules are now active."
+echo "Main firewall configuration complete."
+
+# We're doing this after already saving because this can take a while.
+# This may change in the future.
+# The main issue with this method is that until the IP block rules have
+# been applied, any IP address in the block can connect unless it has been
+# blocked in one of the previous blacklists.
+# Blacklist IP blocks.
+echo "Dropping all packets from IP blocks in block directory."
+echo "This may take a while."
+for x in `grep -vh ^# $IPBLACKLISTBLOCKS/*.zone | awk '{print $1}'`; do
+    $IPTABLES -A INPUT -t filter -s $x -j DROP
+done
+echo "Saving and applying settings."
+$IPTABLESSAVE > /etc/iptables.rules
+$IPTABLESRESTORE < /etc/iptables.rules
+echo "Firewall configuration complete, IPTables rules are now active."
 
 # Print rules.
 #iptables -nvL --line-numbers
